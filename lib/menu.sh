@@ -98,24 +98,31 @@ menu_loop() {
         local key
         key=$(read_key)
         
+        # Arrow key escape sequences
+        local UP=$'\e[A'
+        local DOWN=$'\e[B'
+        local HOME=$'\e[H'
+        local END=$'\e[F'
+        local ESC=$'\e'
+        
         case "$key" in
-            $'\x1b[A'|k)  # Up arrow or k
+            "$UP"|k)  # Up arrow or k
                 ((MENU_SELECTED > 0)) && ((MENU_SELECTED--))
                 ;;
-            $'\x1b[B'|j)  # Down arrow or j
+            "$DOWN"|j)  # Down arrow or j
                 ((MENU_SELECTED < total-1)) && ((MENU_SELECTED++))
                 ;;
-            $'\x1b[H'|g)  # Home or g
+            "$HOME"|g)  # Home or g
                 MENU_SELECTED=0
                 ;;
-            $'\x1b[F'|G)  # End or G
+            "$END"|G)  # End or G
                 MENU_SELECTED=$((total-1))
                 ;;
             "")  # Enter
                 cursor_show
                 return $MENU_SELECTED
                 ;;
-            q|$'\x1b')  # q or Escape
+            q|"$ESC")  # q or Escape alone
                 cursor_show
                 return 255
                 ;;
@@ -124,6 +131,18 @@ menu_loop() {
                 ;;
             "/")  # Search
                 menu_search
+                ;;
+            n)  # New session shortcut
+                cursor_show
+                return 254
+                ;;
+            d)  # Delete session shortcut
+                cursor_show
+                return 253
+                ;;
+            r)  # Rename session shortcut
+                cursor_show
+                return 252
                 ;;
             [1-9])  # Quick select
                 local num=$((key - 1))

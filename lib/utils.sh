@@ -110,13 +110,16 @@ read_key() {
     local key
     IFS= read -rsn1 key
     
-    # Check for escape sequence
-    if [[ "$key" == $'\x1b' ]]; then
-        read -rsn2 -t 0.1 key2
-        key+="$key2"
+    # Check for escape sequence (arrow keys, etc.)
+    if [[ "$key" == $'\e' ]]; then
+        local extra
+        read -rsn2 -t 0.1 extra
+        if [[ -n "$extra" ]]; then
+            key+="$extra"
+        fi
     fi
     
-    echo "$key"
+    printf '%s' "$key"
 }
 
 # Cleanup on exit
