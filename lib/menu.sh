@@ -1,5 +1,6 @@
 #!/bin/bash
 # Menu system for TSM
+# Safe for set -e environments
 
 # Menu state
 declare -a MENU_ITEMS
@@ -13,15 +14,12 @@ draw_box() {
     local title="$1"
     local width="${MENU_WIDTH:-44}"
     
-    # Top border
     echo -e "${C_PRIMARY}${BOX_TL}$(printf '%*s' $((width-2)) '' | tr ' ' "$BOX_H")${BOX_TR}${C_RESET}"
     
-    # Title
     local title_len=${#title}
     local padding=$(( (width - 2 - title_len) / 2 ))
     echo -e "${C_PRIMARY}${BOX_V}${C_RESET}$(printf '%*s' $padding '')${C_BOLD}$title${C_RESET}$(printf '%*s' $((width - 2 - padding - title_len)) '')${C_PRIMARY}${BOX_V}${C_RESET}"
     
-    # Bottom border
     echo -e "${C_PRIMARY}${BOX_BL}$(printf '%*s' $((width-2)) '' | tr ' ' "$BOX_H")${BOX_BR}${C_RESET}"
 }
 
@@ -31,11 +29,12 @@ draw_menu() {
     local max_items="${2:-10}"
     local total=${#MENU_ITEMS[@]}
     
-    # Calculate visible range
     local end_index=$((start_index + max_items))
-    [[ $end_index -gt $total ]] && end_index=$total
+    if [[ $end_index -gt $total ]]; then
+        end_index=$total
+    fi
     
-    # Draw items
+    local i
     for ((i=start_index; i<end_index; i++)); do
         local item="${MENU_ITEMS[$i]}"
         if [[ $i -eq $MENU_SELECTED ]]; then
@@ -45,7 +44,6 @@ draw_menu() {
         fi
     done
     
-    # Show scroll indicators if needed
     if [[ $start_index -gt 0 ]]; then
         echo -e "${MENU_PADDING}${C_MUTED}  ↑ more${C_RESET}"
     fi
@@ -60,97 +58,124 @@ draw_help_line() {
     echo -e "${C_MUTED}${L_HELP_NAV} | ${L_HELP_SELECT} | ${L_HELP_BACK} | ${L_HELP_SEARCH} | ${L_HELP_HELP}${C_RESET}"
 }
 
-# Interactive menu loop
+# Safe decrement
+menu_up() {
+    if [[ $MENU_SELECTED -gt 0 ]]; then
+        MENU_SELECTED=$((MENU_SELECTED - 1))
+    fi
+}
+
+# Safe increment
+menu_down() {
+    local total=${#MENU_ITEMS[@]}
+    local max=$((total - 1))
+    if [[ $MENU_SELECTED -lt $max ]]; then
+        MENU_SELECTED=$((MENU_SELECTED + 1))
+    fi
+}
+
+# Interactive menu loop - returns selection via MENU_RESULT variable
 menu_loop() {
     local total=${#MENU_ITEMS[@]}
     local max_visible=10
     local scroll_offset=0
     
+    # Arrow key sequences
+    local KEY_UP=$'\e[A'
+    local KEY_DOWN=$'\e[B'
+    local KEY_HOME=$'\e[H'
+    local KEY_END=$'\e[F'
+    local KEY_ESC=$'\e'
+    
     cursor_hide
     
     while true; do
         clear_screen
-        
-        # Draw title
         draw_box "$MENU_TITLE"
         echo ""
         
-        # Show filter if active
         if [[ -n "$MENU_FILTER" ]]; then
             echo -e "${MENU_PADDING}${ICON_SEARCH} ${C_PRIMARY}$MENU_FILTER${C_RESET}"
             echo ""
         fi
         
-        # Calculate scroll offset
+        # Calculate scroll
         if [[ $MENU_SELECTED -lt $scroll_offset ]]; then
             scroll_offset=$MENU_SELECTED
         elif [[ $MENU_SELECTED -ge $((scroll_offset + max_visible)) ]]; then
             scroll_offset=$((MENU_SELECTED - max_visible + 1))
         fi
         
-        # Draw menu
         draw_menu $scroll_offset $max_visible
-        
-        # Draw help
         draw_help_line
         
-        # Read input
+        # Read key
         local key
         key=$(read_key)
         
-        # Arrow key escape sequences
-        local UP=$'\e[A'
-        local DOWN=$'\e[B'
-        local HOME=$'\e[H'
-        local END=$'\e[F'
-        local ESC=$'\e'
-        
+        # Handle key
         case "$key" in
-            "$UP"|k)  # Up arrow or k
-                [[ $MENU_SELECTED -gt 0 ]] && ((MENU_SELECTED--)) || true
+            "$KEY_UP"|k)
+                menu_up
                 ;;
-            "$DOWN"|j)  # Down arrow or j
-                [[ $MENU_SELECTED -lt $((total-1)) ]] && ((MENU_SELECTED++)) || true
+            "$KEY_DOWN"|j)
+                menu_down
                 ;;
-            "$HOME"|g)  # Home or g
+            "$KEY_HOME"|g)
                 MENU_SELECTED=0
                 ;;
-            "$END"|G)  # End or G
-                MENU_SELECTED=$((total-1))
+            "$KEY_END"|G)
+                MENU_SELECTED=$((total - 1))
                 ;;
-            "")  # Enter
+            ""|$'\n')  # Enter key
                 cursor_show
-                return $MENU_SELECTED
+                MENU_RESULT=$MENU_SELECTED
+                return 0
                 ;;
-            q|"$ESC")  # q or Escape alone
+            q)
                 cursor_show
-                return 255
+                MENU_RESULT=255
+                return 0
                 ;;
-            "?")  # Help
+            "$KEY_ESC")
+                # Check if it's just ESC (not arrow key)
+                cursor_show
+                MENU_RESULT=255
+                return 0
+                ;;
+            "?")
                 show_help_menu
                 ;;
-            "/")  # Search
+            "/")
                 menu_search
+                total=${#MENU_ITEMS[@]}
                 ;;
-            n)  # New session shortcut
+            n)
                 cursor_show
-                return 254
+                MENU_RESULT=254
+                return 0
                 ;;
-            d)  # Delete session shortcut
+            d)
                 cursor_show
-                return 253
+                MENU_RESULT=253
+                return 0
                 ;;
-            r)  # Rename session shortcut
+            r)
                 cursor_show
-                return 252
+                MENU_RESULT=252
+                return 0
                 ;;
-            [1-9])  # Quick select
+            [1-9])
                 local num=$((key - 1))
                 if [[ $num -lt $total ]]; then
                     MENU_SELECTED=$num
                     cursor_show
-                    return $MENU_SELECTED
+                    MENU_RESULT=$MENU_SELECTED
+                    return 0
                 fi
+                ;;
+            *)
+                # Ignore unknown keys
                 ;;
         esac
     done
@@ -165,10 +190,10 @@ menu_search() {
     cursor_hide
     
     if [[ -n "$MENU_FILTER" ]]; then
-        # Filter items
         local filtered=()
         local filter_lower="${MENU_FILTER,,}"
         
+        local item
         for item in "${MENU_ITEMS[@]}"; do
             local item_lower="${item,,}"
             if [[ "$item_lower" == *"$filter_lower"* ]]; then
@@ -204,11 +229,16 @@ show_help_menu() {
 # Confirmation dialog
 confirm_dialog() {
     local message="$1"
+    local response
     echo ""
     echo -ne "${MENU_PADDING}${C_WARNING}${message}? (y/N)${C_RESET} "
     read -rsn1 response
     echo ""
-    [[ "${response,,}" == "y" ]]
+    if [[ "${response,,}" == "y" ]]; then
+        return 0
+    else
+        return 1
+    fi
 }
 
 # Input dialog
@@ -222,7 +252,9 @@ input_dialog() {
     if [[ -n "$default" ]]; then
         echo -ne "${MENU_PADDING}${prompt} [$default]: "
         read -r result
-        result="${result:-$default}"
+        if [[ -z "$result" ]]; then
+            result="$default"
+        fi
     else
         echo -ne "${MENU_PADDING}${prompt}: "
         read -r result
@@ -234,7 +266,7 @@ input_dialog() {
 
 # Show message
 show_message() {
-    local type="$1"  # success, error, warning
+    local type="$1"
     local message="$2"
     
     case "$type" in

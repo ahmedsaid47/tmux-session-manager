@@ -6,7 +6,8 @@
 # Interactive tmux session manager with arrow key navigation
 #
 
-set -e
+# Disable set -e for safe menu handling
+# set -e
 
 # Get script directory
 TSM_ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
@@ -24,29 +25,21 @@ source "$TSM_ROOT/lib/menu.sh"
 
 # Initialize
 init() {
-    # Check tmux
     if ! check_tmux; then
         echo "Error: tmux is not installed"
         exit 1
     fi
     
-    # Setup cleanup
     setup_cleanup
-    
-    # Check terminal
     check_terminal
     check_connection
-    
-    # Initialize config
     config_init
     
-    # Load language
     lang_load "$(config_get language)"
     
-    # Load theme
-    local theme="$(config_get theme)"
+    local theme
+    theme="$(config_get theme)"
     
-    # Auto-select minimal theme for poor terminals
     if [[ "$HAS_EMOJI" == "false" ]] && [[ "$theme" == "default" ]]; then
         theme="minimal"
     fi
@@ -59,29 +52,27 @@ build_session_menu() {
     MENU_ITEMS=()
     MENU_ACTIONS=()
     
-    # New session option
     MENU_ITEMS+=("${ICON_NEW} ${L_NEW_SESSION}")
     MENU_ACTIONS+=("action_new_session")
     
-    # List sessions
     local sessions
     sessions=$(sessions_list)
     
     if [[ -n "$sessions" ]]; then
         while IFS='|' read -r name windows attached created; do
-            local status_icon
-            [[ "$attached" == "1" ]] && status_icon="$ICON_ACTIVE" || status_icon="$ICON_DETACHED"
-            
-            local status_text
-            [[ "$attached" == "1" ]] && status_text="$L_ACTIVE" || status_text="$L_DETACHED"
+            local status_icon status_text
+            if [[ "$attached" == "1" ]]; then
+                status_icon="$ICON_ACTIVE"
+                status_text="$L_ACTIVE"
+            else
+                status_icon="$ICON_DETACHED"
+                status_text="$L_DETACHED"
+            fi
             
             MENU_ITEMS+=("${ICON_SESSION} ${name} (${windows} ${L_WINDOWS_COUNT}, ${status_icon} ${status_text})")
             MENU_ACTIONS+=("action_attach_session|$name")
         done <<< "$sessions"
-    fi
-    
-    # Other options
-    if [[ -n "$sessions" ]]; then
+        
         MENU_ITEMS+=("${ICON_RENAME} ${L_RENAME_SESSION}")
         MENU_ACTIONS+=("action_rename_menu")
         
@@ -99,26 +90,30 @@ build_session_menu() {
 # Action: New session
 action_new_session() {
     local name
-    name=$(input_dialog "$L_SESSION_NAME" "$(config_get default_session)")
+    name=$(input_dialog "$L_SESSION_NAME" "")
     
     if [[ -n "$name" ]]; then
         if validate_session_name "$name"; then
             if session_create "$name"; then
-                return 0
+                show_message success "$L_SESSION_CREATED"
+                session_attach "$name"
             else
-                show_message error "$L_ERROR: Session already exists"
+                show_message error "$L_ERROR"
+                main_menu
             fi
         else
             show_message error "$L_INVALID_NAME"
+            main_menu
         fi
+    else
+        main_menu
     fi
-    
-    main_menu
 }
 
 # Action: Attach to session
 action_attach_session() {
     local name="$1"
+    cursor_show
     session_attach "$name"
 }
 
@@ -142,9 +137,11 @@ action_rename_menu() {
     MENU_ACTIONS+=("main_menu")
     
     menu_loop
-    local selected=$?
+    local selected=$MENU_RESULT
     
-    if [[ $selected -ne 255 ]]; then
+    if [[ $selected -eq 255 ]]; then
+        main_menu
+    elif [[ $selected -lt ${#MENU_ACTIONS[@]} ]]; then
         local action="${MENU_ACTIONS[$selected]}"
         IFS='|' read -r func arg <<< "$action"
         $func "$arg"
@@ -194,9 +191,11 @@ action_delete_menu() {
     MENU_ACTIONS+=("main_menu")
     
     menu_loop
-    local selected=$?
+    local selected=$MENU_RESULT
     
-    if [[ $selected -ne 255 ]]; then
+    if [[ $selected -eq 255 ]]; then
+        main_menu
+    elif [[ $selected -lt ${#MENU_ACTIONS[@]} ]]; then
         local action="${MENU_ACTIONS[$selected]}"
         IFS='|' read -r func arg <<< "$action"
         $func "$arg"
@@ -217,57 +216,35 @@ action_delete_session() {
         fi
     fi
     
-    # Check if any sessions left
-    if [[ $(sessions_count) -eq 0 ]]; then
-        main_menu
-    else
-        action_delete_menu
-    fi
+    main_menu
 }
 
-# Action: Settings
+# Action: Settings menu
 action_settings() {
     MENU_ITEMS=()
     MENU_ACTIONS=()
-    MENU_TITLE="$L_SETTINGS_TITLE"
+    MENU_TITLE="$L_SETTINGS"
     MENU_SELECTED=0
     MENU_FILTER=""
     
-    # Language
-    local current_lang="$(config_get language)"
-    local lang_display
-    [[ "$current_lang" == "auto" ]] && lang_display="Auto" || lang_display="$(lang_get_name "$current_lang")"
-    MENU_ITEMS+=("${L_LANGUAGE}: ${lang_display}")
+    MENU_ITEMS+=("${ICON_SETTINGS} ${L_LANGUAGE}: $(config_get language)")
     MENU_ACTIONS+=("action_change_language")
     
-    # Theme
-    local current_theme="$(config_get theme)"
-    MENU_ITEMS+=("${L_THEME}: ${current_theme}")
+    MENU_ITEMS+=("${ICON_SETTINGS} ${L_THEME}: $(config_get theme)")
     MENU_ACTIONS+=("action_change_theme")
-    
-    # Auto-attach
-    local auto_attach="$(config_get auto_attach)"
-    local auto_attach_status
-    [[ "$auto_attach" == "true" ]] && auto_attach_status="✓" || auto_attach_status="✗"
-    MENU_ITEMS+=("${L_AUTO_ATTACH}: ${auto_attach_status}")
-    MENU_ACTIONS+=("action_toggle_auto_attach")
-    
-    # Show preview
-    local show_preview="$(config_get show_preview)"
-    local preview_status
-    [[ "$show_preview" == "true" ]] && preview_status="✓" || preview_status="✗"
-    MENU_ITEMS+=("${L_SHOW_PREVIEW}: ${preview_status}")
-    MENU_ACTIONS+=("action_toggle_preview")
     
     MENU_ITEMS+=("${ICON_BACK} ${L_BACK}")
     MENU_ACTIONS+=("main_menu")
     
     menu_loop
-    local selected=$?
+    local selected=$MENU_RESULT
     
-    if [[ $selected -ne 255 ]]; then
+    if [[ $selected -eq 255 ]]; then
+        main_menu
+    elif [[ $selected -lt ${#MENU_ACTIONS[@]} ]]; then
         local action="${MENU_ACTIONS[$selected]}"
-        $action
+        IFS='|' read -r func arg <<< "$action"
+        $func "$arg"
     else
         main_menu
     fi
@@ -284,18 +261,21 @@ action_change_language() {
     MENU_ITEMS+=("Auto (System)")
     MENU_ACTIONS+=("set_language|auto")
     
-    for lang in $(lang_list); do
-        MENU_ITEMS+=("$(lang_get_name "$lang")")
-        MENU_ACTIONS+=("set_language|$lang")
-    done
+    MENU_ITEMS+=("English")
+    MENU_ACTIONS+=("set_language|en")
+    
+    MENU_ITEMS+=("Türkçe")
+    MENU_ACTIONS+=("set_language|tr")
     
     MENU_ITEMS+=("${ICON_BACK} ${L_BACK}")
     MENU_ACTIONS+=("action_settings")
     
     menu_loop
-    local selected=$?
+    local selected=$MENU_RESULT
     
-    if [[ $selected -ne 255 ]]; then
+    if [[ $selected -eq 255 ]]; then
+        action_settings
+    elif [[ $selected -lt ${#MENU_ACTIONS[@]} ]]; then
         local action="${MENU_ACTIONS[$selected]}"
         IFS='|' read -r func arg <<< "$action"
         $func "$arg"
@@ -304,11 +284,13 @@ action_change_language() {
     fi
 }
 
+# Set language
 set_language() {
     local lang="$1"
     config_set language "$lang"
     config_save
     lang_load "$lang"
+    show_message success "$L_SETTINGS_SAVED"
     action_settings
 }
 
@@ -320,19 +302,21 @@ action_change_theme() {
     MENU_SELECTED=0
     MENU_FILTER=""
     
-    MENU_ITEMS+=("Default (Modern)")
+    MENU_ITEMS+=("🎨 Default (Modern)")
     MENU_ACTIONS+=("set_theme|default")
     
-    MENU_ITEMS+=("Minimal (ASCII)")
+    MENU_ITEMS+=("📝 Minimal (ASCII)")
     MENU_ACTIONS+=("set_theme|minimal")
     
     MENU_ITEMS+=("${ICON_BACK} ${L_BACK}")
     MENU_ACTIONS+=("action_settings")
     
     menu_loop
-    local selected=$?
+    local selected=$MENU_RESULT
     
-    if [[ $selected -ne 255 ]]; then
+    if [[ $selected -eq 255 ]]; then
+        action_settings
+    elif [[ $selected -lt ${#MENU_ACTIONS[@]} ]]; then
         local action="${MENU_ACTIONS[$selected]}"
         IFS='|' read -r func arg <<< "$action"
         $func "$arg"
@@ -341,42 +325,20 @@ action_change_theme() {
     fi
 }
 
+# Set theme
 set_theme() {
     local theme="$1"
     config_set theme "$theme"
     config_save
     source "$TSM_ROOT/themes/$theme.sh"
-    action_settings
-}
-
-# Action: Toggle auto-attach
-action_toggle_auto_attach() {
-    local current="$(config_get auto_attach)"
-    if [[ "$current" == "true" ]]; then
-        config_set auto_attach "false"
-    else
-        config_set auto_attach "true"
-    fi
-    config_save
-    action_settings
-}
-
-# Action: Toggle preview
-action_toggle_preview() {
-    local current="$(config_get show_preview)"
-    if [[ "$current" == "true" ]]; then
-        config_set show_preview "false"
-    else
-        config_set show_preview "true"
-    fi
-    config_save
+    show_message success "$L_SETTINGS_SAVED"
     action_settings
 }
 
 # Action: Exit
 action_exit() {
+    cursor_show
     clear_screen
-    echo -e "${C_SUCCESS}${L_GOODBYE}${C_RESET}"
     exit 0
 }
 
@@ -385,19 +347,36 @@ main_menu() {
     MENU_TITLE="$L_TITLE"
     MENU_SELECTED=0
     MENU_FILTER=""
+    MENU_RESULT=255
     
     build_session_menu
     
     menu_loop
-    local selected=$?
+    local selected=$MENU_RESULT
     
-    if [[ $selected -ne 255 ]]; then
-        local action="${MENU_ACTIONS[$selected]}"
-        IFS='|' read -r func arg <<< "$action"
-        $func "$arg"
-    else
-        action_exit
-    fi
+    case $selected in
+        255)
+            action_exit
+            ;;
+        254)
+            action_new_session
+            ;;
+        253)
+            action_delete_menu
+            ;;
+        252)
+            action_rename_menu
+            ;;
+        *)
+            if [[ $selected -lt ${#MENU_ACTIONS[@]} ]]; then
+                local action="${MENU_ACTIONS[$selected]}"
+                IFS='|' read -r func arg <<< "$action"
+                if [[ -n "$func" ]]; then
+                    $func "$arg"
+                fi
+            fi
+            ;;
+    esac
 }
 
 # Show version
@@ -426,8 +405,30 @@ https://github.com/ahmedsaid47/tmux-session-manager
 EOF
 }
 
-# Parse arguments
-parse_args() {
+# List sessions CLI
+list_sessions_cli() {
+    local sessions
+    sessions=$(sessions_list)
+    
+    if [[ -z "$sessions" ]]; then
+        echo "No sessions found"
+        return
+    fi
+    
+    while IFS='|' read -r name windows attached created; do
+        local status
+        if [[ "$attached" == "1" ]]; then
+            status="(attached)"
+        else
+            status="(detached)"
+        fi
+        echo "$name: $windows windows $status"
+    done <<< "$sessions"
+}
+
+# Main function
+main() {
+    # Parse arguments
     while [[ $# -gt 0 ]]; do
         case "$1" in
             -h|--help)
@@ -439,20 +440,29 @@ parse_args() {
                 exit 0
                 ;;
             -l|--list)
-                tmux list-sessions 2>/dev/null || echo "No sessions"
+                check_tmux || { echo "tmux not found"; exit 1; }
+                list_sessions_cli
                 exit 0
                 ;;
             -n|--new)
-                shift
-                session_create "${1:-$(config_get default_session)}"
+                check_tmux || { echo "tmux not found"; exit 1; }
+                if [[ -n "${2:-}" ]]; then
+                    session_create "$2"
+                    session_attach "$2"
+                else
+                    echo "Usage: tsm -n SESSION_NAME"
+                    exit 1
+                fi
                 exit 0
                 ;;
             -a|--attach)
-                local last=$(session_last)
+                check_tmux || { echo "tmux not found"; exit 1; }
+                local last
+                last=$(tmux list-sessions -F '#{session_name}' 2>/dev/null | head -1)
                 if [[ -n "$last" ]]; then
                     session_attach "$last"
                 else
-                    echo "No sessions to attach"
+                    echo "No sessions found"
                 fi
                 exit 0
                 ;;
@@ -464,28 +474,9 @@ parse_args() {
         esac
         shift
     done
-}
-
-# Main entry point
-main() {
-    # Parse command line arguments
-    if [[ $# -gt 0 ]]; then
-        parse_args "$@"
-    fi
     
-    # Initialize
+    # Initialize and run
     init
-    
-    # Check for auto-attach
-    if [[ "$(config_get auto_attach)" == "true" ]]; then
-        local last=$(session_last)
-        if [[ -n "$last" ]] && ! is_in_tmux; then
-            session_attach "$last"
-            exit 0
-        fi
-    fi
-    
-    # Start interactive menu
     main_menu
 }
 
