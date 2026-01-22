@@ -1,13 +1,12 @@
 #!/bin/bash
 #
-# TSM - Tmux Session Manager v2.2.0
+# TSM - Tmux Session Manager v2.2.1
 # https://github.com/ahmedsaid47/tmux-session-manager
 #
 
 TSM_ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 export TSM_ROOT
-
-TSM_VERSION="2.2.0"
+TSM_VERSION="2.2.1"
 
 source "$TSM_ROOT/lib/utils.sh"
 source "$TSM_ROOT/lib/config.sh"
@@ -15,10 +14,9 @@ source "$TSM_ROOT/lib/lang.sh"
 source "$TSM_ROOT/lib/core.sh"
 source "$TSM_ROOT/lib/menu.sh"
 
-# Initialize
 init() {
     if ! check_tmux; then
-        echo "Error: tmux is not installed"
+        echo "Hata: tmux kurulu değil"
         exit 1
     fi
     
@@ -26,383 +24,265 @@ init() {
     check_terminal
     check_connection
     config_init
-    
     lang_load "$(config_get language)"
     
-    local theme
-    theme="$(config_get theme)"
-    
-    if [[ "$HAS_EMOJI" == "false" ]] && [[ "$theme" == "default" ]]; then
-        theme="minimal"
-    fi
-    
+    local theme="$(config_get theme)"
+    [[ "$HAS_EMOJI" == "false" ]] && [[ "$theme" == "default" ]] && theme="minimal"
     source "$TSM_ROOT/themes/$theme.sh"
 }
 
-# Build main menu
-build_session_menu() {
+# Ana menü oluştur
+build_main_menu() {
     MENU_ITEMS=()
     MENU_ACTIONS=()
     
     # Son oturum
-    local last_session
-    last_session=$(get_last_session)
-    
-    if [[ -n "$last_session" ]] && tmux has-session -t "$last_session" 2>/dev/null; then
-        MENU_ITEMS+=("${ICON_LIGHTNING:-⚡} Son Oturum: $last_session")
-        MENU_ACTIONS+=("action_attach_session|$last_session")
+    local last=$(get_last_session)
+    if [[ -n "$last" ]] && tmux has-session -t "$last" 2>/dev/null; then
+        MENU_ITEMS+=("⚡ Son: $last")
+        MENU_ACTIONS+=("do_attach|$last")
     fi
     
     # Yeni oturum
-    MENU_ITEMS+=("${ICON_NEW} ${L_NEW_SESSION}")
-    MENU_ACTIONS+=("action_new_session")
+    MENU_ITEMS+=("➕ Yeni Oturum")
+    MENU_ACTIONS+=("do_new_session")
     
     # Oturum listesi
-    local sessions
-    sessions=$(sessions_list)
-    
+    local sessions=$(sessions_list)
     if [[ -n "$sessions" ]]; then
         while IFS='|' read -r name windows attached created; do
-            [[ "$name" == "$last_session" ]] && continue
-            
-            local status_icon status_text
-            if [[ "$attached" == "1" ]]; then
-                status_icon="$ICON_ACTIVE"
-                status_text="$L_ACTIVE"
-            else
-                status_icon="$ICON_DETACHED"
-                status_text="$L_DETACHED"
-            fi
-            
-            MENU_ITEMS+=("${ICON_SESSION} ${name} (${windows} win, ${status_icon})")
-            MENU_ACTIONS+=("action_session_menu|$name")
+            [[ "$name" == "$last" ]] && continue
+            local icon="⚪"
+            [[ "$attached" == "1" ]] && icon="🟢"
+            MENU_ITEMS+=("📂 $name ($windows win) $icon")
+            MENU_ACTIONS+=("do_session_menu|$name")
         done <<< "$sessions"
     fi
     
-    MENU_ITEMS+=("${ICON_SETTINGS} ${L_SETTINGS}")
-    MENU_ACTIONS+=("action_settings")
+    MENU_ITEMS+=("⚙️  Ayarlar")
+    MENU_ACTIONS+=("do_settings")
     
-    MENU_ITEMS+=("${ICON_EXIT} ${L_EXIT}")
-    MENU_ACTIONS+=("action_exit")
+    MENU_ITEMS+=("🚪 Çıkış")
+    MENU_ACTIONS+=("do_exit")
 }
 
-# Session sub-menu (with windows)
-action_session_menu() {
-    local session_name="$1"
+# Yeni oturum oluştur
+do_new_session() {
+    input_dialog "Oturum adı"
+    local name="$INPUT_RESULT"
     
-    MENU_ITEMS=()
-    MENU_ACTIONS=()
-    MENU_TITLE="📂 $session_name"
-    MENU_SELECTED=0
-    MENU_FILTER=""
-    
-    # Bağlan seçeneği
-    MENU_ITEMS+=("▶️  Oturuma Bağlan")
-    MENU_ACTIONS+=("action_attach_session|$session_name")
-    
-    # Windows listesi
-    local windows
-    windows=$(tmux list-windows -t "$session_name" -F '#{window_index}|#{window_name}|#{window_active}' 2>/dev/null)
-    
-    if [[ -n "$windows" ]]; then
-        MENU_ITEMS+=("─── Pencereler ───")
-        MENU_ACTIONS+=("action_session_menu|$session_name")
-        
-        while IFS='|' read -r idx wname active; do
-            local icon="  "
-            [[ "$active" == "1" ]] && icon="▸ "
-            MENU_ITEMS+=("${icon}${idx}: ${wname}")
-            MENU_ACTIONS+=("action_attach_window|$session_name|$idx")
-        done <<< "$windows"
+    if [[ -z "$name" ]]; then
+        main_menu
+        return
     fi
     
-    # Yeni window
-    MENU_ITEMS+=("➕ Yeni Pencere")
-    MENU_ACTIONS+=("action_new_window|$session_name")
-    
-    # Oturum işlemleri
-    MENU_ITEMS+=("✏️  Adını Değiştir")
-    MENU_ACTIONS+=("action_rename_session|$session_name")
-    
-    MENU_ITEMS+=("🗑️  Oturumu Sil")
-    MENU_ACTIONS+=("action_delete_session|$session_name")
-    
-    MENU_ITEMS+=("${ICON_BACK} Geri")
-    MENU_ACTIONS+=("main_menu")
-    
-    menu_loop
-    local selected=$MENU_RESULT
-    
-    if [[ $selected -eq 255 ]]; then
+    if ! validate_session_name "$name"; then
+        show_message error "Geçersiz isim (sadece harf, rakam, _ ve - kullanın)"
+        sleep 1
         main_menu
-    elif [[ $selected -lt ${#MENU_ACTIONS[@]} ]]; then
-        local action="${MENU_ACTIONS[$selected]}"
-        IFS='|' read -r func arg1 arg2 <<< "$action"
-        $func "$arg1" "$arg2"
+        return
+    fi
+    
+    show_loading "Oturum oluşturuluyor..."
+    
+    if session_create "$name"; then
+        clear_loading
+        show_message success "Oturum '$name' oluşturuldu"
+        save_last_session "$name"
+        sleep 1
+        do_attach "$name"
     else
+        clear_loading
+        show_message error "Oturum oluşturulamadı"
+        sleep 1
         main_menu
     fi
 }
 
-# Attach to specific window
-action_attach_window() {
-    local session="$1"
-    local window="$2"
-    cursor_show
-    save_last_session "$session"
-    tmux select-window -t "$session:$window" 2>/dev/null
-    session_attach_with_return "$session"
-}
-
-# New window in session
-action_new_window() {
-    local session="$1"
-    local wname
-    wname=$(input_dialog "Pencere adı" "")
-    
-    if [[ -n "$wname" ]]; then
-        tmux new-window -t "$session" -n "$wname"
-        show_message success "Pencere oluşturuldu"
-    else
-        tmux new-window -t "$session"
-        show_message success "Pencere oluşturuldu"
-    fi
-    
-    action_session_menu "$session"
-}
-
-# Action: New session
-action_new_session() {
-    local name
-    name=$(input_dialog "$L_SESSION_NAME" "")
-    
-    if [[ -n "$name" ]]; then
-        if validate_session_name "$name"; then
-            if session_create "$name"; then
-                show_message success "$L_SESSION_CREATED"
-                save_last_session "$name"
-                session_attach_with_return "$name"
-            else
-                show_message error "$L_ERROR"
-                main_menu
-            fi
-        else
-            show_message error "$L_INVALID_NAME"
-            main_menu
-        fi
-    else
-        main_menu
-    fi
-}
-
-# Action: Attach to session
-action_attach_session() {
+# Oturuma bağlan
+do_attach() {
     local name="$1"
-    cursor_show
+    reset_terminal
     save_last_session "$name"
-    session_attach_with_return "$name"
-}
-
-# Attach with return to TSM on detach
-session_attach_with_return() {
-    local name="$1"
     
     if is_in_tmux; then
         tmux switch-client -t "$name"
     else
         tmux attach-session -t "$name"
-        
-        if [[ -n "$SSH_CONNECTION" ]]; then
-            exec tsm
-        fi
+        # Detach sonrası TSM'e dön
+        [[ -n "$SSH_CONNECTION" ]] && exec tsm
     fi
 }
 
-# Action: Rename session
-action_rename_session() {
-    local old_name="$1"
-    local new_name
-    new_name=$(input_dialog "$L_NEW_NAME" "$old_name")
+# Oturum alt menüsü
+do_session_menu() {
+    local sname="$1"
     
-    if [[ -n "$new_name" ]] && [[ "$new_name" != "$old_name" ]]; then
-        if validate_session_name "$new_name"; then
-            if session_rename "$old_name" "$new_name"; then
-                show_message success "$L_SESSION_RENAMED"
-                if [[ "$(get_last_session)" == "$old_name" ]]; then
-                    save_last_session "$new_name"
-                fi
-            else
-                show_message error "$L_ERROR"
-            fi
-        else
-            show_message error "$L_INVALID_NAME"
-        fi
-    fi
-    
-    main_menu
-}
-
-# Action: Delete session
-action_delete_session() {
-    local name="$1"
-    
-    if confirm_dialog "${L_CONFIRM_DELETE} '$name'"; then
-        if session_delete "$name"; then
-            show_message success "$L_SESSION_DELETED"
-            if [[ "$(get_last_session)" == "$name" ]]; then
-                save_last_session ""
-            fi
-        else
-            show_message error "$L_ERROR"
-        fi
-    fi
-    
-    main_menu
-}
-
-# Action: Settings menu
-action_settings() {
     MENU_ITEMS=()
     MENU_ACTIONS=()
-    MENU_TITLE="$L_SETTINGS"
+    MENU_TITLE="📂 $sname"
     MENU_SELECTED=0
-    MENU_FILTER=""
     
-    MENU_ITEMS+=("🌍 Dil: $(config_get language)")
-    MENU_ACTIONS+=("action_change_language")
+    MENU_ITEMS+=("▶️  Bağlan")
+    MENU_ACTIONS+=("do_attach|$sname")
     
-    MENU_ITEMS+=("🎨 Tema: $(config_get theme)")
-    MENU_ACTIONS+=("action_change_theme")
+    # Pencereler
+    local wins=$(tmux list-windows -t "$sname" -F '#{window_index}:#{window_name}:#{window_active}' 2>/dev/null)
+    if [[ -n "$wins" ]]; then
+        MENU_ITEMS+=("── Pencereler ──")
+        MENU_ACTIONS+=("do_session_menu|$sname")
+        
+        while IFS=':' read -r idx wname active; do
+            local mark="  "
+            [[ "$active" == "1" ]] && mark="▸ "
+            MENU_ITEMS+=("${mark}$idx: $wname")
+            MENU_ACTIONS+=("do_attach_window|$sname|$idx")
+        done <<< "$wins"
+    fi
     
-    MENU_ITEMS+=("⚙️  Tmux Config Uygula")
-    MENU_ACTIONS+=("action_apply_tmux_config")
+    MENU_ITEMS+=("➕ Yeni Pencere")
+    MENU_ACTIONS+=("do_new_window|$sname")
     
-    MENU_ITEMS+=("${ICON_BACK} Geri")
+    MENU_ITEMS+=("✏️  Yeniden Adlandır")
+    MENU_ACTIONS+=("do_rename|$sname")
+    
+    MENU_ITEMS+=("🗑️  Sil")
+    MENU_ACTIONS+=("do_delete|$sname")
+    
+    MENU_ITEMS+=("← Geri")
     MENU_ACTIONS+=("main_menu")
     
     menu_loop
-    local selected=$MENU_RESULT
+    handle_menu_result
+}
+
+# Pencereye bağlan
+do_attach_window() {
+    local sname="$1"
+    local widx="$2"
+    tmux select-window -t "$sname:$widx" 2>/dev/null
+    do_attach "$sname"
+}
+
+# Yeni pencere
+do_new_window() {
+    local sname="$1"
     
-    if [[ $selected -eq 255 ]]; then
-        main_menu
-    elif [[ $selected -lt ${#MENU_ACTIONS[@]} ]]; then
-        local action="${MENU_ACTIONS[$selected]}"
-        IFS='|' read -r func arg <<< "$action"
-        $func "$arg"
+    input_dialog "Pencere adı (boş bırakılabilir)"
+    local wname="$INPUT_RESULT"
+    
+    show_loading "Pencere oluşturuluyor..."
+    
+    if [[ -n "$wname" ]]; then
+        tmux new-window -t "$sname" -n "$wname"
     else
-        main_menu
+        tmux new-window -t "$sname"
     fi
+    
+    clear_loading
+    show_message success "Pencere oluşturuldu"
+    sleep 1
+    do_session_menu "$sname"
 }
 
-# Action: Apply tmux config
-action_apply_tmux_config() {
-    local tmux_conf="$HOME/.tmux.conf"
+# Yeniden adlandır
+do_rename() {
+    local old="$1"
     
-    cat > "$tmux_conf" << 'TMUXCFG'
-# TSM - Tmux Session Manager
-set -g history-limit 50000
-set -g mouse on
-setw -g mode-keys vi
-set -sg escape-time 0
-set -g base-index 1
-setw -g pane-base-index 1
-set -g renumber-windows on
-
-# Status Bar - Kısayollar göster
-set -g status-position bottom
-set -g status-style 'bg=#1e1e2e fg=#cdd6f4'
-set -g status-left '#[bg=#89b4fa,fg=#1e1e2e,bold] #S #[default] '
-set -g status-left-length 20
-set -g status-right ' #[fg=#6c7086]c:New n:Next p:Prev T:TSM d:Detach #[fg=#89b4fa]| #[fg=white]%H:%M '
-set -g status-right-length 60
-
-# Window format
-setw -g window-status-format ' #I:#W '
-setw -g window-status-current-format '#[bg=#a6e3a1,fg=#1e1e2e,bold] #I:#W '
-
-# TSM binding
-bind-key T run-shell 'tmux detach-client -E "tsm"'
-
-# Scroll
-bind -n WheelUpPane if-shell -F -t = "#{mouse_any_flag}" "send-keys -M" "if -Ft= '#{pane_in_mode}' 'send-keys -M' 'select-pane -t=; copy-mode -e; send-keys -M'"
-bind -n WheelDownPane select-pane -t= \; send-keys -M
-bind u copy-mode
-
-# Window shortcuts
-bind c new-window -c "#{pane_current_path}"
-TMUXCFG
+    input_dialog "Yeni isim" "$old"
+    local new="$INPUT_RESULT"
     
-    tmux source-file "$tmux_conf" 2>/dev/null || true
+    if [[ -z "$new" ]] || [[ "$new" == "$old" ]]; then
+        do_session_menu "$old"
+        return
+    fi
     
-    show_message success "Config uygulandı! Yeni oturumda aktif."
-    action_settings
+    if ! validate_session_name "$new"; then
+        show_message error "Geçersiz isim"
+        sleep 1
+        do_session_menu "$old"
+        return
+    fi
+    
+    if session_rename "$old" "$new"; then
+        show_message success "İsim değiştirildi: $new"
+        [[ "$(get_last_session)" == "$old" ]] && save_last_session "$new"
+    else
+        show_message error "İsim değiştirilemedi"
+    fi
+    sleep 1
+    main_menu
 }
 
-# Action: Change language
-action_change_language() {
+# Sil
+do_delete() {
+    local sname="$1"
+    
+    if confirm_dialog "'$sname' silinsin mi?"; then
+        show_loading "Siliniyor..."
+        if session_delete "$sname"; then
+            clear_loading
+            show_message success "Silindi"
+            [[ "$(get_last_session)" == "$sname" ]] && save_last_session ""
+        else
+            clear_loading
+            show_message error "Silinemedi"
+        fi
+    fi
+    sleep 1
+    main_menu
+}
+
+# Ayarlar
+do_settings() {
     MENU_ITEMS=()
     MENU_ACTIONS=()
-    MENU_TITLE="Dil Seçimi"
+    MENU_TITLE="⚙️ Ayarlar"
     MENU_SELECTED=0
     
-    MENU_ITEMS+=("🌐 Auto (Sistem)")
-    MENU_ACTIONS+=("set_language|auto")
+    MENU_ITEMS+=("🌍 Dil: $(config_get language)")
+    MENU_ACTIONS+=("do_change_lang")
     
-    MENU_ITEMS+=("🇬🇧 English")
-    MENU_ACTIONS+=("set_language|en")
+    MENU_ITEMS+=("🎨 Tema: $(config_get theme)")
+    MENU_ACTIONS+=("do_change_theme")
     
-    MENU_ITEMS+=("🇹🇷 Türkçe")
-    MENU_ACTIONS+=("set_language|tr")
+    MENU_ITEMS+=("📋 Tmux Config Uygula")
+    MENU_ACTIONS+=("do_apply_config")
     
-    MENU_ITEMS+=("${ICON_BACK} Geri")
-    MENU_ACTIONS+=("action_settings")
+    MENU_ITEMS+=("← Geri")
+    MENU_ACTIONS+=("main_menu")
     
     menu_loop
-    local selected=$MENU_RESULT
-    
-    if [[ $selected -eq 255 ]]; then
-        action_settings
-    elif [[ $selected -lt ${#MENU_ACTIONS[@]} ]]; then
-        local action="${MENU_ACTIONS[$selected]}"
-        IFS='|' read -r func arg <<< "$action"
-        $func "$arg"
-    fi
+    handle_menu_result
 }
 
-set_language() {
+do_change_lang() {
+    MENU_ITEMS=("🌐 Auto" "🇬🇧 English" "🇹🇷 Türkçe" "← Geri")
+    MENU_ACTIONS=("set_lang|auto" "set_lang|en" "set_lang|tr" "do_settings")
+    MENU_TITLE="🌍 Dil Seçimi"
+    MENU_SELECTED=0
+    
+    menu_loop
+    handle_menu_result
+}
+
+set_lang() {
     config_set language "$1"
     config_save
     lang_load "$1"
     show_message success "Dil değiştirildi"
-    action_settings
+    sleep 1
+    do_settings
 }
 
-# Action: Change theme
-action_change_theme() {
-    MENU_ITEMS=()
-    MENU_ACTIONS=()
-    MENU_TITLE="Tema Seçimi"
+do_change_theme() {
+    MENU_ITEMS=("🎨 Default" "📝 Minimal" "← Geri")
+    MENU_ACTIONS=("set_theme|default" "set_theme|minimal" "do_settings")
+    MENU_TITLE="🎨 Tema Seçimi"
     MENU_SELECTED=0
     
-    MENU_ITEMS+=("🎨 Default (Emoji)")
-    MENU_ACTIONS+=("set_theme|default")
-    
-    MENU_ITEMS+=("📝 Minimal (ASCII)")
-    MENU_ACTIONS+=("set_theme|minimal")
-    
-    MENU_ITEMS+=("${ICON_BACK} Geri")
-    MENU_ACTIONS+=("action_settings")
-    
     menu_loop
-    local selected=$MENU_RESULT
-    
-    if [[ $selected -eq 255 ]]; then
-        action_settings
-    elif [[ $selected -lt ${#MENU_ACTIONS[@]} ]]; then
-        local action="${MENU_ACTIONS[$selected]}"
-        IFS='|' read -r func arg <<< "$action"
-        $func "$arg"
-    fi
+    handle_menu_result
 }
 
 set_theme() {
@@ -410,106 +290,115 @@ set_theme() {
     config_save
     source "$TSM_ROOT/themes/$1.sh"
     show_message success "Tema değiştirildi"
-    action_settings
+    sleep 1
+    do_settings
 }
 
-# Action: Exit
-action_exit() {
-    cursor_show
+do_apply_config() {
+    show_loading "Config uygulanıyor..."
+    
+    cat > ~/.tmux.conf << 'TCFG'
+# TSM Config
+set -g history-limit 50000
+set -g mouse on
+setw -g mode-keys vi
+set -sg escape-time 0
+set -g base-index 1
+set -g renumber-windows on
+
+# Status bar
+set -g status-style 'bg=#1e1e2e fg=#cdd6f4'
+set -g status-left '#[bg=#89b4fa,fg=#1e1e2e,bold] #S #[default] '
+set -g status-right ' c:New n:Next p:Prev T:TSM | %H:%M '
+setw -g window-status-current-format '#[bg=#a6e3a1,fg=#1e1e2e,bold] #I:#W '
+
+# TSM shortcut
+bind-key T run-shell 'tmux detach -E tsm'
+
+# Scroll
+bind -n WheelUpPane if-shell -F -t = "#{mouse_any_flag}" "send-keys -M" "if -Ft= '#{pane_in_mode}' 'send-keys -M' 'select-pane -t=; copy-mode -e; send-keys -M'"
+bind u copy-mode
+TCFG
+    
+    tmux source-file ~/.tmux.conf 2>/dev/null
+    
+    clear_loading
+    show_message success "Config uygulandı"
+    sleep 1
+    do_settings
+}
+
+do_exit() {
+    reset_terminal
     clear_screen
     exit 0
 }
 
-# Main menu
+# Menü sonucunu işle
+handle_menu_result() {
+    local sel=$MENU_RESULT
+    
+    [[ $sel -eq 255 ]] && main_menu && return
+    
+    if [[ $sel -lt ${#MENU_ACTIONS[@]} ]]; then
+        local action="${MENU_ACTIONS[$sel]}"
+        IFS='|' read -r func arg1 arg2 <<< "$action"
+        [[ -n "$func" ]] && $func "$arg1" "$arg2"
+    else
+        main_menu
+    fi
+}
+
+# Ana menü
 main_menu() {
-    MENU_TITLE="🖥️  TMUX SESSION MANAGER"
+    MENU_TITLE="🖥️  TSM - Session Manager"
     MENU_SELECTED=0
-    MENU_FILTER=""
     MENU_RESULT=255
     
-    build_session_menu
-    
+    build_main_menu
     menu_loop
-    local selected=$MENU_RESULT
-    
-    case $selected in
-        255) action_exit ;;
-        254) action_new_session ;;
-        *)
-            if [[ $selected -lt ${#MENU_ACTIONS[@]} ]]; then
-                local action="${MENU_ACTIONS[$selected]}"
-                IFS='|' read -r func arg <<< "$action"
-                [[ -n "$func" ]] && $func "$arg"
-            fi
-            ;;
-    esac
+    handle_menu_result
 }
 
-# CLI functions
-show_version() {
-    echo "TSM - Tmux Session Manager v${TSM_VERSION}"
-}
-
-show_usage() {
+# CLI
+show_help() {
     cat << EOF
-TSM v${TSM_VERSION} - Tmux Session Manager
+TSM v${TSM_VERSION}
 
 Kullanım: tsm [seçenek]
 
-Seçenekler:
-  -h, --help      Yardım
-  -v, --version   Versiyon
-  -l, --list      Oturum listesi
-  -n, --new AD    Yeni oturum
-  -a, --attach    Son oturuma bağlan
+  -h    Yardım
+  -v    Versiyon
+  -l    Oturum listesi
+  -n X  Yeni oturum
+  -a    Son oturuma bağlan
 
-Menü Kısayolları:
-  ↑/↓       Gezin
-  Enter     Seç
-  n         Yeni oturum
-  q/Esc     Çık
-
-Tmux Kısayolları:
-  Ctrl+b T  TSM menüsü
+Kısayollar:
+  ↑↓    Gezin
+  Enter Seç
+  q     Çık
+  
+Tmux:
+  Ctrl+b T  TSM aç
   Ctrl+b c  Yeni pencere
-  Ctrl+b n  Sonraki pencere
-  Ctrl+b p  Önceki pencere
   Ctrl+b d  Detach
 EOF
 }
 
-list_sessions_cli() {
-    local sessions
-    sessions=$(sessions_list)
-    [[ -z "$sessions" ]] && echo "Oturum yok" && return
-    
-    while IFS='|' read -r name windows attached created; do
-        local s="detached"
-        [[ "$attached" == "1" ]] && s="attached"
-        echo "$name: $windows pencere ($s)"
-    done <<< "$sessions"
-}
-
 # Main
 main() {
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            -h|--help) show_usage; exit 0 ;;
-            -v|--version) show_version; exit 0 ;;
-            -l|--list) list_sessions_cli; exit 0 ;;
-            -n|--new)
-                [[ -n "${2:-}" ]] || { echo "Kullanım: tsm -n AD"; exit 1; }
-                session_create "$2"; session_attach "$2"; exit 0 ;;
-            -a|--attach)
-                local last=$(get_last_session)
-                [[ -n "$last" ]] && tmux has-session -t "$last" 2>/dev/null && session_attach "$last" && exit 0
-                last=$(tmux list-sessions -F '#{session_name}' 2>/dev/null | head -1)
-                [[ -n "$last" ]] && session_attach "$last" || echo "Oturum yok"
-                exit 0 ;;
-            *) echo "Bilinmeyen: $1"; show_usage; exit 1 ;;
-        esac
-        shift
-    done
+    case "${1:-}" in
+        -h|--help) show_help; exit 0 ;;
+        -v|--version) echo "TSM v$TSM_VERSION"; exit 0 ;;
+        -l|--list) sessions_list | while IFS='|' read -r n w a c; do echo "$n ($w win)"; done; exit 0 ;;
+        -n|--new) [[ -n "$2" ]] && { session_create "$2"; tmux attach -t "$2"; } || echo "Kullanım: tsm -n AD"; exit 0 ;;
+        -a|--attach) 
+            local s=$(get_last_session)
+            [[ -n "$s" ]] && tmux has -t "$s" 2>/dev/null && tmux attach -t "$s" && exit 0
+            s=$(tmux ls -F '#{session_name}' 2>/dev/null | head -1)
+            [[ -n "$s" ]] && tmux attach -t "$s" || echo "Oturum yok"
+            exit 0 ;;
+    esac
     
     init
     main_menu
