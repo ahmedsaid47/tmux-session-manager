@@ -1,0 +1,54 @@
+#!/bin/bash
+# Default theme - Modern with emojis
+
+# Colors
+C_RESET='\033[0m'
+C_BOLD='\033[1m'
+C_DIM='\033[2m'
+
+C_RED='\033[0;31m'
+C_GREEN='\033[0;32m'
+C_YELLOW='\033[1;33m'
+C_BLUE='\033[0;34m'
+C_MAGENTA='\033[0;35m'
+C_CYAN='\033[0;36m'
+C_WHITE='\033[1;37m'
+
+# Theme colors
+C_PRIMARY="$C_CYAN"
+C_SECONDARY="$C_BLUE"
+C_SUCCESS="$C_GREEN"
+C_WARNING="$C_YELLOW"
+C_DANGER="$C_RED"
+C_MUTED="$C_DIM"
+C_HIGHLIGHT="$C_GREEN"
+
+# Icons (emoji)
+ICON_SESSION="📂"
+ICON_NEW="➕"
+ICON_DELETE="🗑️"
+ICON_RENAME="✏️"
+ICON_WINDOWS="🪟"
+ICON_SETTINGS="⚙️"
+ICON_HELP="❓"
+ICON_EXIT="🚪"
+ICON_BACK="↩️"
+ICON_ACTIVE="🟢"
+ICON_DETACHED="⚪"
+ICON_SELECTED="▶"
+ICON_SEARCH="🔍"
+ICON_SUCCESS="✓"
+ICON_ERROR="✗"
+ICON_WARNING="⚠️"
+
+# Box drawing
+BOX_TL="╔"
+BOX_TR="╗"
+BOX_BL="╚"
+BOX_BR="╝"
+BOX_H="═"
+BOX_V="║"
+
+# Menu styling
+MENU_WIDTH=44
+MENU_PADDING="  "

@@ -1,72 +1,103 @@
-# 🖥️ Tmux Session Manager
+# 🖥️ TSM - Tmux Session Manager
 
-SSH/Mosh bağlantılarında tmux oturumlarını **sadece yön tuşları ve Enter** ile yönetin.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Bash](https://img.shields.io/badge/Bash-4.0+-green.svg)](https://www.gnu.org/software/bash/)
 
-![Demo](https://raw.githubusercontent.com/ahmedsaid47/tmux-session-manager/main/demo.gif)
+Interactive tmux session manager with arrow-key navigation. Perfect for SSH and mosh connections.
 
-## ✨ Özellikler
+## ✨ Features
 
-- 📂 **Mevcut oturumlara bağlan** - Aktif/pasif durumu görün
-- ➕ **Yeni oturum oluştur** - İsim vererek
-- 🗑️ **Oturum sil** - Kolay silme menüsü
-- 🔄 **Bağlantı kopsa bile** - İşlemler devam eder
-- 📜 **Scroll desteği** - Mosh'ta bile çalışır (50K satır geçmiş)
-- 🖱️ **Mouse desteği** - Tıklayarak gezin
+- 🎮 **Arrow-key navigation** - No need to remember commands
+- 🌍 **Multi-language** - Auto-detects system language (EN/TR)
+- 🎨 **Themes** - Modern (emoji) and minimal (ASCII) modes
+- 📜 **Scroll support** - Works great with mosh
+- ⚡ **Fast** - Pure bash, no dependencies except tmux
+- 🔧 **Configurable** - Customize via config file
 
-## 🚀 Kurulum
+## 📸 Preview
+
+```
+╔══════════════════════════════════════════╗
+║       🖥️  TMUX SESSION MANAGER          ║
+╠══════════════════════════════════════════╣
+║  📋 Sessions:                            ║
+║                                          ║
+║   ▸ main         (3 windows)  ●          ║
+║     dev          (2 windows)             ║
+║     server       (1 window)              ║
+║                                          ║
+╠══════════════════════════════════════════╣
+║ ↑↓ Navigate  Enter Select  n New  d Del  ║
+╚══════════════════════════════════════════╝
+```
+
+## 🚀 Quick Install
 
 ```bash
 curl -sL https://raw.githubusercontent.com/ahmedsaid47/tmux-session-manager/main/install.sh | bash
 ```
 
-## 📖 Kullanım
-
-SSH ile bağlandığınızda otomatik açılır:
-
-```
-╔════════════════════════════════════════╗
-║     🖥️  TMUX OTURUM YÖNETİCİSİ          ║
-╚════════════════════════════════════════╝
-
-↑↓ Seç | Enter Onayla
-
-  ▶ ➕ Yeni Oturum Oluştur
-    📂 main (1 pencere, 🟢 aktif)
-    📂 dev (3 pencere, ⚪ pasif)
-    🗑️  Oturum Sil
-    🚪 Çıkış
-```
-
-### Tuşlar
-
-| Tuş | İşlev |
-|-----|-------|
-| `↑` `↓` | Seçim yap |
-| `Enter` | Onayla |
-
-### Tmux İçinde
-
-| Kısayol | İşlev |
-|---------|-------|
-| `Ctrl+b s` | Oturum seçici |
-| `Ctrl+b u` | Scroll modu |
-| `Ctrl+b d` | Oturumdan ayrıl |
-
-## 🔧 Manuel Çalıştırma
+## 📖 Usage
 
 ```bash
-~/.tmux-menu.sh
+tsm                 # Interactive menu
+tsm -n project      # Create new session
+tsm -l              # List sessions
+tsm -a              # Attach to last session
+tsm --help          # Show help
 ```
 
-## 📝 Gereksinimler
+### Keyboard Shortcuts
 
-- tmux
-- bash 4+
+| Key | Action |
+|-----|--------|
+| `↑/↓` | Navigate sessions |
+| `Enter` | Attach to session |
+| `n` | New session |
+| `d` | Delete session |
+| `r` | Rename session |
+| `/` | Search sessions |
+| `?` | Help |
+| `q` | Quit |
 
-## 📄 Lisans
+## ⚙️ Configuration
 
-MIT
+Config file: `~/.config/tmux-session-manager/config.conf`
 
----
+```conf
+language=auto       # auto, en, tr
+theme=default       # default, minimal
+show_preview=true   # Show session details
+```
 
-⭐ Beğendiyseniz yıldız verin!
+## 🔧 Manual Installation
+
+```bash
+git clone https://github.com/ahmedsaid47/tmux-session-manager.git
+cd tmux-session-manager
+./install.sh
+```
+
+## 🗑️ Uninstall
+
+```bash
+curl -sL https://raw.githubusercontent.com/ahmedsaid47/tmux-session-manager/main/install.sh | bash -s -- --uninstall
+```
+
+## 📋 Requirements
+
+- tmux 2.0+
+- bash 4.0+ (macOS may need update)
+- curl or wget
+
+## 🤝 Contributing
+
+Contributions welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) first.
+
+## 📄 License
+
+MIT License - see [LICENSE](LICENSE)
+
+## 🙏 Credits
+
+Created by [@ahmedsaid47](https://github.com/ahmedsaid47)
