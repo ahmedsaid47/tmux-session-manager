@@ -1,20 +1,13 @@
 #!/bin/bash
 #
-# TSM - Tmux Session Manager
+# TSM - Tmux Session Manager v2.1.0
 # https://github.com/ahmedsaid47/tmux-session-manager
 #
-# Interactive tmux session manager with arrow key navigation
-#
 
-# Disable set -e for safe menu handling
-# set -e
-
-# Get script directory
 TSM_ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 export TSM_ROOT
 
-# Version
-TSM_VERSION="2.0.0"
+TSM_VERSION="2.1.0"
 
 # Load libraries
 source "$TSM_ROOT/lib/utils.sh"
@@ -52,14 +45,28 @@ build_session_menu() {
     MENU_ITEMS=()
     MENU_ACTIONS=()
     
+    # Son oturum varsa göster
+    local last_session
+    last_session=$(get_last_session)
+    
+    if [[ -n "$last_session" ]] && tmux has-session -t "$last_session" 2>/dev/null; then
+        MENU_ITEMS+=("${ICON_LIGHTNING:-⚡} ${L_LAST_SESSION:-Son Oturum}: $last_session")
+        MENU_ACTIONS+=("action_attach_session|$last_session")
+    fi
+    
+    # Yeni oturum
     MENU_ITEMS+=("${ICON_NEW} ${L_NEW_SESSION}")
     MENU_ACTIONS+=("action_new_session")
     
+    # Oturum listesi
     local sessions
     sessions=$(sessions_list)
     
     if [[ -n "$sessions" ]]; then
         while IFS='|' read -r name windows attached created; do
+            # Son oturumu tekrar gösterme
+            [[ "$name" == "$last_session" ]] && continue
+            
             local status_icon status_text
             if [[ "$attached" == "1" ]]; then
                 status_icon="$ICON_ACTIVE"
@@ -96,7 +103,8 @@ action_new_session() {
         if validate_session_name "$name"; then
             if session_create "$name"; then
                 show_message success "$L_SESSION_CREATED"
-                session_attach "$name"
+                save_last_session "$name"
+                session_attach_with_return "$name"
             else
                 show_message error "$L_ERROR"
                 main_menu
@@ -110,11 +118,29 @@ action_new_session() {
     fi
 }
 
-# Action: Attach to session
+# Action: Attach to session (with return to TSM on detach)
 action_attach_session() {
     local name="$1"
     cursor_show
-    session_attach "$name"
+    save_last_session "$name"
+    session_attach_with_return "$name"
+}
+
+# Attach with return to TSM on detach
+session_attach_with_return() {
+    local name="$1"
+    
+    # Oturuma bağlan
+    if is_in_tmux; then
+        tmux switch-client -t "$name"
+    else
+        tmux attach-session -t "$name"
+        
+        # Detach olunca TSM'e geri dön (sadece SSH'da)
+        if [[ -n "$SSH_CONNECTION" ]]; then
+            exec tsm
+        fi
+    fi
 }
 
 # Action: Rename menu
@@ -160,6 +186,10 @@ action_rename_session() {
         if validate_session_name "$new_name"; then
             if session_rename "$old_name" "$new_name"; then
                 show_message success "$L_SESSION_RENAMED"
+                # Son oturum güncelle
+                if [[ "$(get_last_session)" == "$old_name" ]]; then
+                    save_last_session "$new_name"
+                fi
             else
                 show_message error "$L_ERROR"
             fi
@@ -211,6 +241,10 @@ action_delete_session() {
     if confirm_dialog "${L_CONFIRM_DELETE} '$name'"; then
         if session_delete "$name"; then
             show_message success "$L_SESSION_DELETED"
+            # Son oturum silindiyse temizle
+            if [[ "$(get_last_session)" == "$name" ]]; then
+                save_last_session ""
+            fi
         else
             show_message error "$L_ERROR"
         fi
@@ -233,6 +267,9 @@ action_settings() {
     MENU_ITEMS+=("${ICON_SETTINGS} ${L_THEME}: $(config_get theme)")
     MENU_ACTIONS+=("action_change_theme")
     
+    MENU_ITEMS+=("${ICON_SETTINGS} Tmux Config Uygula")
+    MENU_ACTIONS+=("action_apply_tmux_config")
+    
     MENU_ITEMS+=("${ICON_BACK} ${L_BACK}")
     MENU_ACTIONS+=("main_menu")
     
@@ -248,6 +285,68 @@ action_settings() {
     else
         main_menu
     fi
+}
+
+# Action: Apply tmux config
+action_apply_tmux_config() {
+    local tmux_conf="$HOME/.tmux.conf"
+    local backup="$HOME/.tmux.conf.backup.$(date +%Y%m%d%H%M%S)"
+    
+    # Backup existing
+    if [[ -f "$tmux_conf" ]]; then
+        cp "$tmux_conf" "$backup"
+    fi
+    
+    # Apply TSM tmux config
+    cat > "$tmux_conf" << 'TMUXCFG'
+# TSM - Tmux Session Manager Configuration
+# https://github.com/ahmedsaid47/tmux-session-manager
+
+# Genel
+set -g history-limit 50000
+set -g mouse on
+setw -g mode-keys vi
+set -sg escape-time 0
+set -g base-index 1
+setw -g pane-base-index 1
+set -g renumber-windows on
+
+# Status Bar
+set -g status-position bottom
+set -g status-style 'bg=#1e1e2e fg=#cdd6f4'
+set -g status-left-length 30
+set -g status-left '#[fg=#1e1e2e,bg=#89b4fa,bold] #S #[fg=#89b4fa,bg=#1e1e2e]'
+set -g status-right-length 80
+set -g status-right '#[fg=#6c7086]c:Yeni n/p:Win d:Detach T:Menü #[fg=#89b4fa]│#[fg=#cdd6f4] %H:%M'
+set -g status-justify left
+setw -g window-status-format '#[fg=#6c7086] #I:#W '
+setw -g window-status-current-format '#[fg=#1e1e2e,bg=#a6e3a1,bold] #I:#W #[fg=#a6e3a1,bg=#1e1e2e]'
+
+# TSM Kısayolları
+bind-key T run-shell 'tmux detach-client -E "tsm"'
+bind-key S choose-tree -sZ
+
+# Scroll & Mosh
+bind -n WheelUpPane if-shell -F -t = "#{mouse_any_flag}" "send-keys -M" "if -Ft= '#{pane_in_mode}' 'send-keys -M' 'select-pane -t=; copy-mode -e; send-keys -M'"
+bind -n WheelDownPane select-pane -t= \; send-keys -M
+bind u copy-mode
+
+# Window
+bind c new-window -c "#{pane_current_path}"
+bind -n M-Left previous-window
+bind -n M-Right next-window
+bind -n M-1 select-window -t 1
+bind -n M-2 select-window -t 2
+bind -n M-3 select-window -t 3
+bind -n M-4 select-window -t 4
+bind -n M-5 select-window -t 5
+TMUXCFG
+    
+    # Reload tmux config if running
+    tmux source-file "$tmux_conf" 2>/dev/null || true
+    
+    show_message success "Tmux config uygulandı!"
+    action_settings
 }
 
 # Action: Change language
@@ -399,7 +498,20 @@ Options:
   -n, --new NAME  Create new session
   -a, --attach    Attach to last session
 
-Without options, starts interactive menu.
+Keyboard Shortcuts (in menu):
+  ↑/↓, j/k    Navigate
+  Enter       Select
+  n           New session
+  d           Delete session
+  r           Rename session
+  /           Search
+  q, Esc      Quit
+
+Tmux Shortcuts (inside session):
+  Ctrl+b T    Open TSM menu
+  Ctrl+b c    New window
+  Ctrl+b n/p  Next/Previous window
+  Ctrl+b d    Detach (return to TSM)
 
 https://github.com/ahmedsaid47/tmux-session-manager
 EOF
@@ -428,7 +540,6 @@ list_sessions_cli() {
 
 # Main function
 main() {
-    # Parse arguments
     while [[ $# -gt 0 ]]; do
         case "$1" in
             -h|--help)
@@ -448,6 +559,7 @@ main() {
                 check_tmux || { echo "tmux not found"; exit 1; }
                 if [[ -n "${2:-}" ]]; then
                     session_create "$2"
+                    save_last_session "$2"
                     session_attach "$2"
                 else
                     echo "Usage: tsm -n SESSION_NAME"
@@ -458,11 +570,16 @@ main() {
             -a|--attach)
                 check_tmux || { echo "tmux not found"; exit 1; }
                 local last
-                last=$(tmux list-sessions -F '#{session_name}' 2>/dev/null | head -1)
-                if [[ -n "$last" ]]; then
+                last=$(get_last_session)
+                if [[ -n "$last" ]] && tmux has-session -t "$last" 2>/dev/null; then
                     session_attach "$last"
                 else
-                    echo "No sessions found"
+                    last=$(tmux list-sessions -F '#{session_name}' 2>/dev/null | head -1)
+                    if [[ -n "$last" ]]; then
+                        session_attach "$last"
+                    else
+                        echo "No sessions found"
+                    fi
                 fi
                 exit 0
                 ;;
@@ -475,10 +592,8 @@ main() {
         shift
     done
     
-    # Initialize and run
     init
     main_menu
 }
 
-# Run
 main "$@"

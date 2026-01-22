@@ -1,41 +1,39 @@
 #!/bin/bash
-# Config management for TSM
+# Configuration management for TSM
 
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/tmux-session-manager"
 CONFIG_FILE="$CONFIG_DIR/config.conf"
 
-# Default configuration
 declare -A CONFIG_DEFAULTS=(
-    [language]="auto"
-    [theme]="default"
-    [auto_attach]="false"
-    [show_preview]="true"
-    [default_session]="main"
-    [history_limit]="50000"
-    [mouse_support]="true"
+    ['language']='auto'
+    ['theme']='default'
+    ['auto_attach']='false'
+    ['show_preview']='true'
+    ['default_session']='main'
+    ['history_limit']='50000'
+    ['mouse_support']='true'
+    ['last_session']=''
 )
 
-# Current configuration
 declare -A CONFIG
 
-# Initialize config directory and file
+# Initialize config
 config_init() {
-    # Create config directory
-    [[ ! -d "$CONFIG_DIR" ]] && mkdir -p "$CONFIG_DIR"
+    if [[ ! -d "$CONFIG_DIR" ]]; then
+        mkdir -p "$CONFIG_DIR"
+    fi
     
-    # Create default config if not exists
     if [[ ! -f "$CONFIG_FILE" ]]; then
         config_create_default
     fi
     
-    # Load configuration
     config_load
 }
 
-# Create default configuration file
+# Create default config file
 config_create_default() {
     cat > "$CONFIG_FILE" << 'EOF'
-# Tmux Session Manager Configuration
+# TSM - Tmux Session Manager Configuration
 # https://github.com/ahmedsaid47/tmux-session-manager
 
 # Language: auto, en, tr
@@ -47,7 +45,7 @@ theme=default
 # Auto-attach to last session on start
 auto_attach=false
 
-# Show session preview (window list)
+# Show session preview
 show_preview=true
 
 # Default session name for new sessions
@@ -56,14 +54,17 @@ default_session=main
 # Tmux history limit
 history_limit=50000
 
-# Enable mouse support
+# Mouse support
 mouse_support=true
+
+# Last used session (auto-updated)
+last_session=
 EOF
 }
 
-# Load configuration from file
+# Load config from file
 config_load() {
-    # Start with defaults
+    # Set defaults first
     for key in "${!CONFIG_DEFAULTS[@]}"; do
         CONFIG[$key]="${CONFIG_DEFAULTS[$key]}"
     done
@@ -81,45 +82,17 @@ config_load() {
             value="${value##*( )}"
             value="${value%%*( )}"
             
-            # Store value
-            [[ -n "$key" ]] && CONFIG[$key]="$value"
+            if [[ -n "$key" ]]; then
+                CONFIG[$key]="$value"
+            fi
         done < "$CONFIG_FILE"
     fi
-}
-
-# Save configuration to file
-config_save() {
-    cat > "$CONFIG_FILE" << EOF
-# Tmux Session Manager Configuration
-# https://github.com/ahmedsaid47/tmux-session-manager
-
-# Language: auto, en, tr
-language=${CONFIG[language]}
-
-# Theme: default, minimal
-theme=${CONFIG[theme]}
-
-# Auto-attach to last session on start
-auto_attach=${CONFIG[auto_attach]}
-
-# Show session preview (window list)
-show_preview=${CONFIG[show_preview]}
-
-# Default session name for new sessions
-default_session=${CONFIG[default_session]}
-
-# Tmux history limit
-history_limit=${CONFIG[history_limit]}
-
-# Enable mouse support
-mouse_support=${CONFIG[mouse_support]}
-EOF
 }
 
 # Get config value
 config_get() {
     local key="$1"
-    echo "${CONFIG[$key]:-${CONFIG_DEFAULTS[$key]}}"
+    echo "${CONFIG[$key]:-${CONFIG_DEFAULTS[$key]:-}}"
 }
 
 # Set config value
@@ -129,7 +102,46 @@ config_set() {
     CONFIG[$key]="$value"
 }
 
-# Get config directory path
-config_get_dir() {
-    echo "$CONFIG_DIR"
+# Save config to file
+config_save() {
+    cat > "$CONFIG_FILE" << EOF
+# TSM - Tmux Session Manager Configuration
+# https://github.com/ahmedsaid47/tmux-session-manager
+
+# Language: auto, en, tr
+language=${CONFIG['language']:-auto}
+
+# Theme: default, minimal
+theme=${CONFIG['theme']:-default}
+
+# Auto-attach to last session on start
+auto_attach=${CONFIG['auto_attach']:-false}
+
+# Show session preview
+show_preview=${CONFIG['show_preview']:-true}
+
+# Default session name for new sessions
+default_session=${CONFIG['default_session']:-main}
+
+# Tmux history limit
+history_limit=${CONFIG['history_limit']:-50000}
+
+# Mouse support
+mouse_support=${CONFIG['mouse_support']:-true}
+
+# Last used session (auto-updated)
+last_session=${CONFIG['last_session']:-}
+EOF
+}
+
+# Save last session
+save_last_session() {
+    local session="$1"
+    config_set last_session "$session"
+    config_save
+}
+
+# Get last session
+get_last_session() {
+    config_get last_session
 }

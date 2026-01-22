@@ -60,3 +60,7 @@ L_WINDOW_TITLE="WINDOW MANAGEMENT"
 L_NEW_WINDOW="New Window"
 L_CLOSE_WINDOW="Close Window"
 L_RENAME_WINDOW="Rename Window"
+
+# v2.1.0 additions
+L_LAST_SESSION="Last Session"
+L_APPLY_CONFIG="Apply Tmux Config"

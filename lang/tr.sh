@@ -60,3 +60,7 @@ L_WINDOW_TITLE="PENCERE YÖNETİMİ"
 L_NEW_WINDOW="Yeni Pencere"
 L_CLOSE_WINDOW="Pencereyi Kapat"
 L_RENAME_WINDOW="Pencereyi Yeniden Adlandır"
+
+# v2.1.0 eklemeleri
+L_LAST_SESSION="Son Oturum"
+L_APPLY_CONFIG="Tmux Config Uygula"
