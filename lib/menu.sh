@@ -107,10 +107,10 @@ menu_loop() {
         
         case "$key" in
             "$UP"|k)  # Up arrow or k
-                ((MENU_SELECTED > 0)) && ((MENU_SELECTED--))
+                [[ $MENU_SELECTED -gt 0 ]] && ((MENU_SELECTED--)) || true
                 ;;
             "$DOWN"|j)  # Down arrow or j
-                ((MENU_SELECTED < total-1)) && ((MENU_SELECTED++))
+                [[ $MENU_SELECTED -lt $((total-1)) ]] && ((MENU_SELECTED++)) || true
                 ;;
             "$HOME"|g)  # Home or g
                 MENU_SELECTED=0
