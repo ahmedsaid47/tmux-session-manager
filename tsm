@@ -255,8 +255,8 @@ set -g renumber-windows on
 set -g status-position bottom
 set -g status-style 'bg=#1e1e2e fg=#cdd6f4'
 set -g status-left '#[bg=#89b4fa,fg=#1e1e2e,bold] #S '
-set -g status-right-length 100
-set -g status-right '#[fg=#89b4fa][ #[fg=#a6e3a1]c#[fg=#6c7086]:Yeni #[fg=#a6e3a1]d#[fg=#6c7086]:Detach #[fg=#a6e3a1]T#[fg=#6c7086]:TSM #[fg=#89b4fa]] #[fg=white]%H:%M'
+set -g status-right '#[fg=#6c7086]^b+c#[fg=#a6e3a1]:Pencere #[fg=#6c7086]^b+d#[fg=#a6e3a1]:Detach #[fg=#6c7086]^b+T#[fg=#a6e3a1]:TSM #[fg=#89b4fa]│ #[fg=white]%H:%M'
+set -g status-right '#[fg=#6c7086]^b+c#[fg=#a6e3a1]:Pencere #[fg=#6c7086]^b+d#[fg=#a6e3a1]:Detach #[fg=#6c7086]^b+T#[fg=#a6e3a1]:TSM #[fg=#89b4fa]│ #[fg=white]%H:%M'
 setw -g window-status-format '#[fg=#6c7086] #I:#W '
 setw -g window-status-current-format '#[bg=#a6e3a1,fg=#1e1e2e,bold] #I:#W '
 bind-key T run-shell 'tmux detach -E tsm'
